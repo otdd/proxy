@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package otdd.config;
+
+message OtddConfig {
+	bool is_inbound = 1;
+	string report_cluster = 2;
+}

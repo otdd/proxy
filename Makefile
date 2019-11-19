@@ -35,7 +35,7 @@ PATH := /usr/lib/llvm-7/bin:$(PATH)
 
 # Removed 'bazel shutdown' as it could cause CircleCI to hang
 build:
-	PATH=$(PATH) CC=$(CC) CXX=$(CXX) bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_TARGETS)
+	PATH=$(PATH) CC=$(CC) CXX=$(CXX) bazel $(BAZEL_STARTUP_ARGS) build $(BAZEL_BUILD_ARGS) $(BAZEL_TARGETS) --host_javabase=@local_jdk//:jdk
 
 # Build only envoy - fast
 build_envoy:
