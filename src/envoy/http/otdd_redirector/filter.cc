@@ -1,0 +1,165 @@
+/* Copyright 2017 Istio Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "src/envoy/http/otdd_redirector/filter.h"
+
+#include "common/common/base64.h"
+#include "common/protobuf/utility.h"
+#include "include/istio/utils/status.h"
+#include "src/envoy/utils/authn.h"
+#include "common/http/async_client_impl.h"
+#include "common/common/stack_array.h"
+
+using ::google::protobuf::util::Status;
+
+namespace Envoy {
+namespace Http {
+namespace OtddRedirector {
+
+    static unsigned long _s_last_redirect_time = 0;
+    static bool _s_is_redirecting = false;
+    static Http::AsyncClient::Request* _s_active_request_ = nullptr;
+
+    Filter::Filter(OtddRedirectorConfig conf,Server::Configuration::FactoryContext& context)
+      :context_(context){
+      conf_ = conf;
+    }
+    
+    Filter::~Filter() {
+      ENVOY_LOG(info,"~Filter");
+    }
+
+    FilterHeadersStatus Filter::decodeHeaders(HeaderMap& headers, bool end_stream) {
+      ENVOY_LOG(info,"decodeHeaders");
+      headers_ = &headers;
+      ENVOY_LOG(info,"decodeHeaders");
+      if(end_stream){
+            if(redirectRequest()){
+                return FilterHeadersStatus::StopIteration;
+            }
+            else{
+                return FilterHeadersStatus::Continue;
+            }
+      }
+      else{
+            return FilterHeadersStatus::Continue;
+      }
+    }
+    
+    FilterDataStatus Filter::decodeData(Buffer::Instance& data, bool end_stream) {
+      ENVOY_LOG(info,"decodeData");
+      uint64_t num_slices = data.getRawSlices(nullptr, 0);
+      STACK_ARRAY(slices, Buffer::RawSlice, num_slices);
+      data.getRawSlices(slices.begin(), num_slices);
+      for (const Buffer::RawSlice& slice : slices) {
+        body_.append(static_cast<const char*>(slice.mem_), slice.len_);
+      }
+      if(end_stream){
+            if(redirectRequest()){
+                return FilterDataStatus::StopIterationNoBuffer;
+            }
+            else{
+                return FilterDataStatus::Continue;
+            }
+      }
+      else{
+            return FilterDataStatus::Continue;
+      }
+    }
+    
+    FilterTrailersStatus Filter::decodeTrailers(HeaderMap& ) {
+      ENVOY_LOG(info,"decodeTrailers");
+      return FilterTrailersStatus::Continue;
+    }
+    
+    void Filter::setDecoderFilterCallbacks(
+        StreamDecoderFilterCallbacks& callbacks) {
+      ENVOY_LOG(info,"setDecoderFilterCallbacks");
+      decoder_callbacks_ = &callbacks;
+    }
+    
+    void Filter::onDestroy() {
+      ENVOY_LOG(info,"onDestroy");
+    }
+
+    bool Filter::redirectRequest(){
+      if( _s_is_redirecting ){
+          return false;
+      }
+      const auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>( 
+        std::chrono::system_clock::now().time_since_epoch()).count();
+      if(current_time - _s_last_redirect_time < conf_.interval()){
+          return false;
+      }
+      _s_is_redirecting = true;
+      _s_last_redirect_time = current_time;
+      ENVOY_LOG(info,"redirect request");
+      Http::MessagePtr request(new Http::RequestMessageImpl(Http::HeaderMapPtr{new Http::HeaderMapImpl(*headers_)}));
+      if(body_.length()>0){
+          request->body() = std::make_unique<Buffer::OwnedImpl>(body_);
+          request->headers().insertContentLength().value(body_.length());
+      }
+
+      auto timeout = std::chrono::milliseconds(5000);
+      auto &cm = context_.clusterManager();
+      auto &client = cm.httpAsyncClientForCluster(conf_.target_cluster());
+      _s_active_request_ = client.send(std::move(request), *this,AsyncClient::RequestOptions().setTimeout(timeout));
+      //active_request_ = context_.clusterManager().httpAsyncClientForCluster(conf_.target_cluster())
+      //                 .send(std::move(request), *this,
+      //                      AsyncClient::RequestOptions().setTimeout(timeout));
+      return true;
+    }
+
+    void Filter::onSuccess(Http::MessagePtr&& response){
+      ENVOY_LOG(info,"redirect request succeed.");
+      requestComplete();
+
+      decoder_callbacks_->sendLocalReply(
+        Code(Http::Utility::getResponseStatus(response->headers())), response->bodyAsString(),
+        [& headers = response->headers()](HeaderMap& response_headers) {
+
+          headers.iterate(
+            [](const Http::HeaderEntry& header, void* context) -> Http::HeaderMap::Iterate {
+            HeaderMap* response_headers = static_cast<HeaderMap*>(context);
+            if(std::string(header.key().getStringView())!=":status"&&std::string(header.key().getStringView())!="content-length"){
+              ENVOY_LOG(info,"add header: {}={}",std::string(header.key().getStringView()),std::string(header.value().getStringView()));
+              response_headers->addCopy(Http::LowerCaseString{std::string(header.key().getStringView())},std::string(header.value().getStringView().data()));
+            }
+            return Http::HeaderMap::Iterate::Continue;
+          },&response_headers);
+           //HeaderUtility::addHeaders(response_headers,headers);
+        },
+        absl::nullopt, "otdd_redirected_response");
+      return;
+    }
+
+    void Filter::onFailure(Http::AsyncClient::FailureReason ){
+      ENVOY_LOG(info,"redirect request failed.");
+      requestComplete();
+    }
+    void Filter::requestComplete(){
+      ENVOY_LOG(info,"requestComplete");
+      _s_active_request_ = nullptr;
+      _s_is_redirecting = false;
+      headers_ = nullptr;
+      body_ = "";
+      const auto current_time = std::chrono::duration_cast<std::chrono::milliseconds>( 
+        std::chrono::system_clock::now().time_since_epoch()).count();
+      _s_last_redirect_time = current_time;
+    }
+
+}  // namespace Mixer
+}  // namespace Http
+}  // namespace Envoy
