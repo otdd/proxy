@@ -21,6 +21,7 @@
 #include "src/envoy/utils/authn.h"
 #include "common/http/async_client_impl.h"
 #include "common/common/stack_array.h"
+#include "common/common/enum_to_int.h"
 
 using ::google::protobuf::util::Status;
 
@@ -30,21 +31,27 @@ namespace OtddRedirector {
 
     static unsigned long _s_last_redirect_time = 0;
     static bool _s_is_redirecting = false;
-    static Http::AsyncClient::Request* _s_active_request_ = nullptr;
+    static Http::AsyncClient::Request* _s_active_request_ptr = nullptr;
+    static std::thread::id*  _s_max_worker_thread_id_ptr = nullptr;
 
     Filter::Filter(OtddRedirectorConfig conf,Server::Configuration::FactoryContext& context)
       :context_(context){
       conf_ = conf;
+      if(_s_max_worker_thread_id_ptr == nullptr){
+        _s_max_worker_thread_id_ptr = new std::thread::id();
+        *_s_max_worker_thread_id_ptr = std::this_thread::get_id();
+      } 
+      if(*_s_max_worker_thread_id_ptr < std::this_thread::get_id()){
+        *_s_max_worker_thread_id_ptr = std::this_thread::get_id();
+      }
     }
     
     Filter::~Filter() {
-      ENVOY_LOG(info,"~Filter");
     }
 
     FilterHeadersStatus Filter::decodeHeaders(HeaderMap& headers, bool end_stream) {
-      ENVOY_LOG(info,"decodeHeaders");
+      ENVOY_LOG(debug,"decodeHeaders end_stream:{}",end_stream);
       headers_ = &headers;
-      ENVOY_LOG(info,"decodeHeaders");
       if(end_stream){
             if(redirectRequest()){
                 return FilterHeadersStatus::StopIteration;
@@ -59,7 +66,7 @@ namespace OtddRedirector {
     }
     
     FilterDataStatus Filter::decodeData(Buffer::Instance& data, bool end_stream) {
-      ENVOY_LOG(info,"decodeData");
+      ENVOY_LOG(debug,"decodeData, end_stream:{}",end_stream);
       uint64_t num_slices = data.getRawSlices(nullptr, 0);
       STACK_ARRAY(slices, Buffer::RawSlice, num_slices);
       data.getRawSlices(slices.begin(), num_slices);
@@ -80,21 +87,24 @@ namespace OtddRedirector {
     }
     
     FilterTrailersStatus Filter::decodeTrailers(HeaderMap& ) {
-      ENVOY_LOG(info,"decodeTrailers");
+      ENVOY_LOG(debug,"decodeTrailers");
       return FilterTrailersStatus::Continue;
     }
     
     void Filter::setDecoderFilterCallbacks(
         StreamDecoderFilterCallbacks& callbacks) {
-      ENVOY_LOG(info,"setDecoderFilterCallbacks");
       decoder_callbacks_ = &callbacks;
     }
     
     void Filter::onDestroy() {
-      ENVOY_LOG(info,"onDestroy");
     }
 
     bool Filter::redirectRequest(){
+      //only allow one worker thread to perform the redirection in order to avoid locking.
+      //we choose the worker thread that has the max thread_id.
+      if(*_s_max_worker_thread_id_ptr != std::this_thread::get_id()){
+          return false;
+      }
       if( _s_is_redirecting ){
           return false;
       }
@@ -105,7 +115,7 @@ namespace OtddRedirector {
       }
       _s_is_redirecting = true;
       _s_last_redirect_time = current_time;
-      ENVOY_LOG(info,"redirect request");
+      ENVOY_LOG(info,"redirecting request to: {}",conf_.target_cluster());
       Http::MessagePtr request(new Http::RequestMessageImpl(Http::HeaderMapPtr{new Http::HeaderMapImpl(*headers_)}));
       if(body_.length()>0){
           request->body() = std::make_unique<Buffer::OwnedImpl>(body_);
@@ -115,7 +125,10 @@ namespace OtddRedirector {
       auto timeout = std::chrono::milliseconds(5000);
       auto &cm = context_.clusterManager();
       auto &client = cm.httpAsyncClientForCluster(conf_.target_cluster());
-      _s_active_request_ = client.send(std::move(request), *this,AsyncClient::RequestOptions().setTimeout(timeout));
+      if(_s_active_request_ptr!=nullptr){
+        _s_active_request_ptr->cancel();
+      }
+      _s_active_request_ptr = client.send(std::move(request), *this,AsyncClient::RequestOptions().setTimeout(timeout));
       //active_request_ = context_.clusterManager().httpAsyncClientForCluster(conf_.target_cluster())
       //                 .send(std::move(request), *this,
       //                      AsyncClient::RequestOptions().setTimeout(timeout));
@@ -134,7 +147,7 @@ namespace OtddRedirector {
             [](const Http::HeaderEntry& header, void* context) -> Http::HeaderMap::Iterate {
             HeaderMap* response_headers = static_cast<HeaderMap*>(context);
             if(std::string(header.key().getStringView())!=":status"&&std::string(header.key().getStringView())!="content-length"){
-              ENVOY_LOG(info,"add header: {}={}",std::string(header.key().getStringView()),std::string(header.value().getStringView()));
+              ENVOY_LOG(debug,"add header: {}={}",std::string(header.key().getStringView()),std::string(header.value().getStringView()));
               response_headers->addCopy(Http::LowerCaseString{std::string(header.key().getStringView())},std::string(header.value().getStringView().data()));
             }
             return Http::HeaderMap::Iterate::Continue;
@@ -145,13 +158,13 @@ namespace OtddRedirector {
       return;
     }
 
-    void Filter::onFailure(Http::AsyncClient::FailureReason ){
-      ENVOY_LOG(info,"redirect request failed.");
+    void Filter::onFailure(Http::AsyncClient::FailureReason reason){
+      ENVOY_LOG(warn,"redirect request failed. reason: {}, the request will continue to be processed locally.",enumToInt(reason));
       requestComplete();
+      decoder_callbacks_->continueDecoding();
     }
     void Filter::requestComplete(){
-      ENVOY_LOG(info,"requestComplete");
-      _s_active_request_ = nullptr;
+      _s_active_request_ptr = nullptr;
       _s_is_redirecting = false;
       headers_ = nullptr;
       body_ = "";
