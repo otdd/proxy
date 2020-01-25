@@ -20,21 +20,21 @@
 #include "envoy/network/filter.h"
 #include "google/protobuf/struct.pb.h"
 #include "include/istio/mixerclient/check_response.h"
-#include "src/envoy/tcp/otdd/config.h"
-#include "src/envoy/tcp/otdd/otdd_test_case.h"
+#include "src/envoy/tcp/otdd_recorder/config.h"
+#include "src/envoy/tcp/otdd_recorder/otdd_test_case.h"
 #include "envoy/server/filter_config.h"
 
-using ::otdd::config::OtddConfig;
+using ::otddrecorder::config::OtddRecorderConfig;
 
 namespace Envoy {
 namespace Tcp {
-namespace Otdd {
+namespace OtddRecorder {
 
 class Filter : public Network::Filter,
                public Network::ConnectionCallbacks,
                public Logger::Loggable<Logger::Id::filter> {
  public:
-  Filter(OtddConfig conf,Server::Configuration::FactoryContext& context);
+  Filter(OtddRecorderConfig conf,Server::Configuration::FactoryContext& context);
   ~Filter();
 
   void initializeReadFilterCallbacks(
@@ -63,13 +63,13 @@ class Filter : public Network::Filter,
   // start_time
   std::chrono::time_point<std::chrono::system_clock> start_time_;
 
-  OtddConfig config_;
+  OtddRecorderConfig config_;
   std::shared_ptr<OtddCall> otdd_call_ptr_;
   bool write_occured_;
   Server::Configuration::FactoryContext& context_;
 
 };
 
-}  // namespace Mixer
+}  // namespace OtddRecorder
 }  // namespace Tcp
 }  // namespace Envoy

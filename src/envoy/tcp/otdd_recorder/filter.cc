@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#include "src/envoy/tcp/otdd/filter.h"
+#include "src/envoy/tcp/otdd_recorder/filter.h"
 
 #include "common/common/enum_to_int.h"
 #include "extensions/filters/network/well_known_names.h"
@@ -26,18 +26,18 @@
 
 using ::google::protobuf::util::Status;
 using ::istio::mixerclient::CheckResponseInfo;
-using ::otdd::config::OtddConfig;
+using ::otddrecorder::config::OtddRecorderConfig;
 using ::istio::mixer::v1::ReportResponse;
 using ::istio::mixerclient::TransportResult;
 using ::istio::mixerclient::TransportStatus;
 
 namespace Envoy {
 namespace Tcp {
-namespace Otdd {
+namespace OtddRecorder {
 
 static std::shared_ptr<OtddTestCase> _s_current_otdd_testcase_ptr = NULL;
 
-Filter::Filter(OtddConfig conf,Server::Configuration::FactoryContext& context):
+Filter::Filter(OtddRecorderConfig conf,Server::Configuration::FactoryContext& context):
   context_(context) {
   config_ = conf;
   otdd_call_ptr_ = NULL;
@@ -119,6 +119,12 @@ bool Filter::reportToMixer(std::shared_ptr<OtddTestCase> otdd_test){
   std::string testCase;
   ENVOY_LOG(debug,"--- complete otdd test case ---");
   testCase.append("{");
+  testCase.append("\"module\":\"");
+  testCase.append(config_.module_name());
+  testCase.append("\",");
+  testCase.append("\"protocol\":\"");
+  testCase.append(config_.protocol());
+  testCase.append("\",");
   if(otdd_test->inbound_call_!=NULL){
     ENVOY_LOG(debug,"-- inbound call -- \n -- req -- \n {} \n -- resp --\n {} ", otdd_test->inbound_call_->req_bytes_,otdd_test->inbound_call_->resp_bytes_);
     testCase.append("\"inbound\":"+convertTestCallToJson(otdd_test->inbound_call_)+",");
@@ -188,6 +194,6 @@ std::string Filter::convertTestCallToJson(std::shared_ptr<OtddCall> otdd_call){
   return ret;
 }
 
-}  // namespace Otdd
+}  // namespace OtddRecorder
 }  // namespace Tcp
 }  // namespace Envoy

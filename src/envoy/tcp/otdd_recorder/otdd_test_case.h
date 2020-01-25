@@ -2,7 +2,7 @@
 
 namespace Envoy {
 namespace Tcp {
-namespace Otdd {
+namespace OtddRecorder {
   class OtddCall{
     public:
       std::string req_bytes_;

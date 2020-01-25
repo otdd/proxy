@@ -37,14 +37,14 @@ envoy_cc_library(
         "//src/envoy/utils:utils_lib",
         "//src/istio/utils:utils_lib",
         "@envoy//source/exe:envoy_common_lib",
-        ":otdd_config_cc_proto",
+        ":otdd_recorder_config_cc_proto",
     ],
 )
 
 cc_proto_library(
-    name = "otdd_config_cc_proto",
+    name = "otdd_recorder_config_cc_proto",
     srcs = [
-        "otdd_config.proto",
+        "otdd_recorder_config.proto",
     ],
     default_runtime = "//external:protobuf",
     protoc = "//external:protoc",

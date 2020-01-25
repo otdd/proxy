@@ -15,14 +15,14 @@
 
 #pragma once
 
-#include "src/envoy/tcp/otdd/otdd_config.pb.h"
+#include "src/envoy/tcp/otdd_recorder/otdd_recorder_config.pb.h"
 #include "src/envoy/utils/config.h"
 
 namespace Envoy {
 namespace Tcp {
-namespace Otdd {
+namespace OtddRecorder {
 
-// Config for otdd filter.
+// Config for otdd.recorder filter.
 class Config {
  public:
   Config(){
@@ -30,9 +30,11 @@ class Config {
 
   // The Tcp client config.
   bool is_inbound;
+  std::string module_name;
+  std::string protocol;
   std::string report_cluster;
 };
 
-}  // namespace Otdd
+}  // namespace OtddRecorder
 }  // namespace Tcp
 }  // namespace Envoy

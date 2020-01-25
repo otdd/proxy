@@ -148,7 +148,7 @@ namespace OtddRedirector {
             HeaderMap* response_headers = static_cast<HeaderMap*>(context);
             if(std::string(header.key().getStringView())!=":status"&&std::string(header.key().getStringView())!="content-length"){
               ENVOY_LOG(debug,"add header: {}={}",std::string(header.key().getStringView()),std::string(header.value().getStringView()));
-              response_headers->addCopy(Http::LowerCaseString{std::string(header.key().getStringView())},std::string(header.value().getStringView().data()));
+              response_headers->addCopy(Http::LowerCaseString{std::string(header.key().getStringView())},std::string(header.value().getStringView()));
             }
             return Http::HeaderMap::Iterate::Continue;
           },&response_headers);
