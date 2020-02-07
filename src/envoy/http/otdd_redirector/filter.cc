@@ -122,7 +122,8 @@ namespace OtddRedirector {
           request->headers().insertContentLength().value(body_.length());
       }
 
-      auto timeout = std::chrono::milliseconds(5000);
+      //the upstream timeout will not be treated as an failure and will crash proxy in current async client implementation. so just set this timeout to a very big value.
+      auto timeout = std::chrono::milliseconds(60000);
       auto &cm = context_.clusterManager();
       auto &client = cm.httpAsyncClientForCluster(conf_.target_cluster());
       if(_s_active_request_ptr!=nullptr){

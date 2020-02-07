@@ -178,7 +178,6 @@ std::string Filter::convertTestCallToJson(std::shared_ptr<OtddCall> otdd_call){
     return "";
   }
   std::string ret;
-
   std::string base64_req = Base64::encode(otdd_call->req_bytes_.c_str(), otdd_call->req_bytes_.size());
   std::string base64_resp = Base64::encode(otdd_call->resp_bytes_.c_str(), otdd_call->resp_bytes_.size());
   ret.append("{");
