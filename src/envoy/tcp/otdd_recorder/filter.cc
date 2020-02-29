@@ -80,7 +80,7 @@ Network::FilterStatus Filter::onData(Buffer::Instance &data, bool) {
   }
   otdd_call_ptr_->req_bytes_.append(data.toString());
 
-  ENVOY_LOG(debug,"in tcp filter onRead, content: {}, is_inbound:{} conn remote:{} local:{}",  data.toString().c_str(),config_.is_inbound(),
+  ENVOY_LOG(debug,"in tcp filter onRead, content: {}, len: {} is_inbound:{} conn remote:{} local:{}",  data.toString(),data.toString().length(),config_.is_inbound(),
                  filter_callbacks_->connection().remoteAddress()->asString(),filter_callbacks_->connection().localAddress()->asString());
   return Network::FilterStatus::Continue;
 }
@@ -91,6 +91,7 @@ Network::FilterStatus Filter::onWrite(Buffer::Instance &data, bool) {
   if(otdd_call_ptr_==NULL){
     ENVOY_LOG(debug,"it's a greeting msg.");
     otdd_call_ptr_ = std::make_shared<OtddCall>();
+    _s_current_otdd_testcase_ptr->outbound_calls_.push_back(otdd_call_ptr_);
   }
   if(otdd_call_ptr_->resp_bytes_==""){
     auto now = std::chrono::system_clock::now();
@@ -98,7 +99,7 @@ Network::FilterStatus Filter::onWrite(Buffer::Instance &data, bool) {
     otdd_call_ptr_->resp_timestamp_ = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
   }
   otdd_call_ptr_->resp_bytes_.append(data.toString());
-  ENVOY_LOG(debug,"in tcp filter onWrite, content: {}, conn remote:{} local:{}",data.toString().c_str(),
+  ENVOY_LOG(debug,"in tcp filter onWrite, content: {}, len: {} conn remote:{} local:{}",data.toString(),data.toString().length(),
                  filter_callbacks_->connection().remoteAddress()->asString(),filter_callbacks_->connection().localAddress()->asString());
   return Network::FilterStatus::Continue;
 }
@@ -134,9 +135,9 @@ bool Filter::reportToMixer(std::shared_ptr<OtddTestCase> otdd_test){
   for(auto const& outbound_call : otdd_test->outbound_calls_) {
     ENVOY_LOG(debug,"-- outbound call -- \n -- req -- {} \n -- resp --\n {} ", outbound_call->req_bytes_,outbound_call->resp_bytes_);
     if(tmp!=0){
-      tmp++;
       testCase.append(",");
     }
+    tmp++;
     testCase.append(convertTestCallToJson(outbound_call));
   }
   testCase.append("]");

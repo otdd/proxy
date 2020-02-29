@@ -51,6 +51,12 @@ namespace OtddRedirector {
 
     FilterHeadersStatus Filter::decodeHeaders(HeaderMap& headers, bool end_stream) {
       ENVOY_LOG(debug,"decodeHeaders end_stream:{}",end_stream);
+      headers.iterate(
+            [](const Http::HeaderEntry& header,void* ){
+                  ENVOY_LOG(debug,"decodeHeaders header key:{} value:{}",header.key().getStringView(),header.value().getStringView());
+                  return Http::HeaderMap::Iterate::Continue;
+             }, nullptr 
+      );
       headers_ = &headers;
       if(end_stream){
             if(redirectRequest()){
@@ -73,6 +79,7 @@ namespace OtddRedirector {
       for (const Buffer::RawSlice& slice : slices) {
         body_.append(static_cast<const char*>(slice.mem_), slice.len_);
       }
+      ENVOY_LOG(debug,"decodeData, body:{}",body_);
       if(end_stream){
             if(redirectRequest()){
                 return FilterDataStatus::StopIterationNoBuffer;
@@ -86,8 +93,14 @@ namespace OtddRedirector {
       }
     }
     
-    FilterTrailersStatus Filter::decodeTrailers(HeaderMap& ) {
+    FilterTrailersStatus Filter::decodeTrailers(HeaderMap& headers) {
       ENVOY_LOG(debug,"decodeTrailers");
+      headers.iterate(
+            [](const Http::HeaderEntry& header,void* ){
+                  ENVOY_LOG(debug,"decodeTrailers header key:{} value:{}",header.key().getStringView(),header.value().getStringView());
+                  return Http::HeaderMap::Iterate::Continue;
+             }, nullptr 
+      );
       return FilterTrailersStatus::Continue;
     }
     
